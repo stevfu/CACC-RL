@@ -2,7 +2,7 @@
 
 Research project under Dr. Ahmed Hamdi Sakr
  
-" Currently work in progress" 
+* Work In Progress
 
 Implementation of reinforcement learning to train CACC controllers! 
 
