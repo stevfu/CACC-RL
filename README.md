@@ -1,4 +1,6 @@
 # CACC-RL
+
+Research project under Dr. Ahmed Hamdi Sakr
  
 " Currently work in progress" 
 
@@ -24,7 +26,7 @@ To view training results, use agentTest.py
 
 On stable-baselines3 using TD3, after ~5M training steps on laptop 1650Ti-MaxQ: 
 
-![followCar]()
+![followCar](https://github.com/stevfu/CACC-RL/blob/main/td3_followCar_v0.gif)
 
 ## Changelog 
 Version 1.0: Creation of inital designs and files 
