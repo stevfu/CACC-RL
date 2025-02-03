@@ -1,6 +1,8 @@
 import torch
 import gymnasium as gym
 import os
+import imageio
+from PIL import Image 
 
 import gym_followCar
 
@@ -18,28 +20,32 @@ Description:
 Script to test trained agent on environments. Change <agentType> based on library used for training
 
 '''
-env = gym.make("followCar-v0",render_mode = "human")
+
 
 agentType = "sb3"
 
 if agentType == "sb3":
-    print("Current working directory:", os.getcwd())
-    if os.path.exists("td3_followCar.zip"):
-        print("Model file found!")
-    else:
-        print("Model file missing!")
-
+    env = gym.make("followCar-v0",render_mode = "rgb_array")
     model = sb3.TD3.load("td3_followCar_v0.zip") # Change if required 
     obs, _ = env.reset()
     done = False
+    frames = []
 
     while not done:
         action, _states = model.predict(obs, deterministic=True)  
         obs, reward, done, truncated, info = env.step(action)
 
+        frame = env.render()
+        frames.append(Image.fromarray(frame))
+
     env.close()  
 
+    gif_path = "td3_followCar_v0.gif"
+    frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=50, loop=0)
+    print(f"GIF saved at {gif_path}")
+
 if agentType == "agilerl":
+    env = gym.make("followCar-v0",render_mode = "human")
     agent_path = "AgileRL_TD3_trained_agent.pt" # Change if required 
 
     if os.path.exists(agent_path):
