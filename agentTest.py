@@ -1,5 +1,9 @@
 import torch
 import gymnasium as gym
+import os
+
+import gym_followCar
+
 import agilerl
 from agilerl.algorithms.td3 import TD3
 from agilerl.utils.utils import make_vect_envs
@@ -7,9 +11,13 @@ from agilerl.utils.utils import make_vect_envs
 import stable_baselines3 as sb3
 from stable_baselines3 import TD3
 from stable_baselines3.common.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise
-import followCarEnvironment  
-import os
 
+'''
+Description:
+
+Script to test trained agent on environments. Change <agentType> based on library used for training
+
+'''
 env = gym.make("followCar-v0",render_mode = "human")
 
 agentType = "sb3"

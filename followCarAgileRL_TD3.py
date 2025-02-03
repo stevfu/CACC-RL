@@ -9,15 +9,19 @@ from agilerl.training.train_off_policy import train_off_policy
 import numpy as np
 import torch
 
-import followCarEnvironment 
+import gym_followCar
+
+'''
+Description: 
+
+Use of AgileRL library to train agents based on TD3 algorithm. 
+
+'''
 
 
-# Create environment and Experience Replay Buffer
+# Create Environment and Experience Replay Buffer
 
 def main():
-    
-    # Creating environments
-
     
 
     # Hyperparameters

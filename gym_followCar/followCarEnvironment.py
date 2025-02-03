@@ -13,10 +13,6 @@ from gymnasium.vector.utils import batch_space
 from gymnasium.envs.registration import register
 from gymnasium.spaces import Box
 
-register(
-    id = 'followCar-v0', 
-    entry_point='followCarEnvironment:followCar',
-)
 
 class followCar(gym.Env[np.ndarray, Union[int, np.ndarray]]): 
     '''
@@ -40,27 +36,25 @@ class followCar(gym.Env[np.ndarray, Union[int, np.ndarray]]):
     3           Follower Velocity (m/s)     -5            5
 
     ## Rewards 
-    A reward of +1 is given for being within +-1m of the following distance 
-    A reward of 0 is given for being >1m greater of the following distance 
-    A reward of -1 is given for being >5m greater of the following distance 
-    A reward of -100 is given for collision
+    A robust reward function is used to ensure for proper training, where:
+    (+) - Tracking Reward: reward for being within the following distance, which exponentially scales based on how close you are 
+    (-) - Collision Penalty: Harsh penalty for when the follower car crashes into the leader car 
+    (-) - Distance Penalty: Penalizes follower if they are too far from the leader car 
+    (-) - Acceleration Penalty: Minor penalty for super harsh acceleration changes to prevent jerking 
 
-   
 
     ## Starting State 
-    The Leader Position is 15m ahead of the follower, while the Follower Position starts at 0 
-    Leader Velocity and follower velocity will start at 0 
+    The Leader Position is 25m ahead of the follower, while the Follower Position starts at 0 
+    Leader Velocity and Follower velocity will start at 0 
 
     ## Episode End 
     The episode ends if: 
-    - Termination: Distance greater than 20m
+    - Termination: Distance greater than 50m
     - Termination: Both cars are touching 
-    - Truncation: Episode length > 500
+    - Truncation: Reach Max Distance 
 
     ## Arguments 
     render_mode for gymnasium.make for pygame 
-
-    
 
     '''
 

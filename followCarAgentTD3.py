@@ -1,10 +1,17 @@
 import gymnasium as gym
 import numpy as np
 
-import followCarEnvironment
+import gym_followCar
 
 from stable_baselines3 import TD3
 from stable_baselines3.common.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise
+
+'''
+Description: 
+
+Use of stable-baselines3 library to train agents based on TD3 algorithm. 
+
+'''
 
 env = gym.make("followCar-v0", render_mode="human")
 
