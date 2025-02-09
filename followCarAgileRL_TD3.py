@@ -8,6 +8,7 @@ from agilerl.hpo.tournament import TournamentSelection
 from agilerl.training.train_off_policy import train_off_policy
 import numpy as np
 import torch
+import multiprocessing
 
 import gym_followCar
 
@@ -41,7 +42,7 @@ def main():
         "THETA": 0.15,  # Rate of mean reversion in OU noise
         "DT": 0.01,  # Timestep for OU noise
         "GAMMA": 0.99,  # Discount factor
-        "MEMORY_SIZE": 100_000,  # Max memory buffer size
+        "MEMORY_SIZE": 50_000,  # Max memory buffer size
         "POLICY_FREQ": 3,  # Policy network update frequency
         "LEARN_STEP": 1,  # Learning frequency
         "TAU": 0.005,  # For soft update of target parameters
@@ -52,7 +53,7 @@ def main():
         "TARGET_SCORE": 500.0,  # Target score that will beat the environment
         "EVO_LOOP": 3,  # Number of evaluation episodes
         "MAX_STEPS": 2000,  # Maximum number of steps an agent takes in an environment
-        "LEARNING_DELAY": 10000,  # Steps before starting learning
+        "LEARNING_DELAY": 5000,  # Steps before starting learning
         "EVO_STEPS": 10000,  # Evolution frequency
         "EVAL_STEPS": None,  # Number of evaluation steps per episode
         "EVAL_LOOP": 1,  # Number of evaluation episodes
@@ -214,6 +215,7 @@ def main():
         
 
 if __name__ == "__main__":
-    num_envs = 8
+    multiprocessing.set_start_method("spawn", force=True); 
+    num_envs = 4
     env = make_vect_envs('followCar-v0',num_envs = num_envs)
     main()
