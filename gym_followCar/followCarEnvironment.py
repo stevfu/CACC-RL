@@ -88,6 +88,8 @@ class followCar(gym.Env[np.ndarray, Union[int, np.ndarray]]):
 
         self.initialLeaderPosition = 100
 
+        self.leaderVelocity=0
+
         
         lowerLimits = np.array( #minimum values 
             [
@@ -117,8 +119,8 @@ class followCar(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         self.observation_space = spaces.Box(lowerLimits, upperLimits, dtype = np.float32)
 
         self.render_mode = render_mode
-        self.screen_width = 1280
-        self.screen_height = 400
+        self.screen_width = 800
+        self.screen_height = 600
         self.screen = None
         self.clock = None
         self.isopen = True
@@ -143,7 +145,7 @@ class followCar(gym.Env[np.ndarray, Union[int, np.ndarray]]):
 
         # Initial Variables 
         leaderPosition,leaderVelocity,followerPosition,followerVelocity = self.state 
-        leaderVelocity = np.sin(self.time * 2 * np.pi) + 4  #add offset
+        self.leaderVelocity = np.sin(self.time * 2 * np.pi) + 4  #add offset
         
         # Updating Position and Velocity 
         leaderPosition += leaderVelocity * self.tau
@@ -237,6 +239,7 @@ class followCar(gym.Env[np.ndarray, Union[int, np.ndarray]]):
             if self.render_mode == "human": 
                 pygame.display.init()
                 self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+                pygame.display.set_caption("followCarEnvironment")
             else: 
                 self.screen = pygame.Surface ((self.screen_width, self.screen_height))
 
@@ -248,6 +251,9 @@ class followCar(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         scale = self.screen_width / world_width 
         carHeight = 25
         carWidth = 50
+
+        font = pygame.font.Font(None, 36)
+
 
         if self.state is None: 
             return None 
@@ -274,9 +280,15 @@ class followCar(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         gfxdraw.aapolygon(self.surf, leaderCoordinates,(0,0,0))
         gfxdraw.filled_polygon(self.surf, leaderCoordinates,(255,0,0))
 
+        displayText = "Leader Velocity: "  + str(self.leaderVelocity)
+        text_surface = font.render(displayText, True, (255, 0, 0))  # White text
+        text_rect = text_surface.get_rect(center=(650, 150))  # Centered position
 
         self.surf = pygame.transform.flip(self.surf, False, True)
         self.screen.blit(self.surf, (0,0))
+
+        self.screen.blit(text_surface, text_rect)  # Draw text onto screen
+
         if self.render_mode == "human": 
             pygame.event.pump()
             self.clock.tick(self.metadata["render_fps"])

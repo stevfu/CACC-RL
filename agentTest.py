@@ -25,34 +25,50 @@ Script to test trained agent on environments. Change <agentType> based on librar
 agentType = "sb3"
 
 if agentType == "sb3":
-    env = gym.make("followCar-v0",render_mode = "rgb_array")
-    model = sb3.TD3.load("td3_followCar_v0.zip") # Change if required 
+    # Create environment (render mode as 'rgb_array' for saving frames)
+    env = gym.make("followCar-v1", render_mode="rgb_array")
+
+    # Load trained model
+    model = sb3.TD3.load("trained_agent/td3_followCar_v1.zip")  # Change if required
+
+    # Reset environment
     obs, _ = env.reset()
     done = False
     frames = []
 
+    # Run one full episode
     while not done:
         action, _states = model.predict(obs, deterministic=True)  
-        obs, reward, done, truncated, info = env.step(action)
-
+        obs, reward, terminated, truncated, info = env.step(action)
+        
+        # Capture frame
         frame = env.render()
-        frames.append(Image.fromarray(frame))
+        if frame is not None:
+            frames.append(Image.fromarray(frame))  # Append only if valid
+        
+        # Stop after one episode
+        if terminated or truncated:
+            break  
 
-    env.close()  
+    env.close()  # Close environment when done
 
-    gif_path = "td3_followCar_v0.gif"
-    frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=50, loop=0)
-    print(f"GIF saved at {gif_path}")
+    # Save as GIF
+    gif_path = "trained_agent/td3_followCar_v1_2.gif"
+    if frames:
+        frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=50, loop=0)
+        print(f"GIF saved at {gif_path}")
+    else:
+        print("No frames were captured. Check render settings.")
 
 if agentType == "agilerl":
     env = gym.make("followCar-v0",render_mode = "human")
     agent_path = "AgileRL_TD3_trained_agent.pt" # Change if required 
 
     if os.path.exists(agent_path):
-        print("✅ Model file found!")
+        print("Model file found!")
         print(f"File size: {os.path.getsize(agent_path)} bytes")
     else:
-        print("❌ Model file not found!")
+        print("Model file not found!")
 
     # Load the trained agent
     device = "cuda" if torch.cuda.is_available() else "cpu"
