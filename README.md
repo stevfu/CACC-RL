@@ -28,7 +28,7 @@ To view training results, use agentTest.py
 
 On stable-baselines3 using TD3, after ~5M training steps on laptop 1650Ti-MaxQ: 
 
-![followCar]([https://github.com/stevfu/CACC-RL/blob/main/td3_followCar_v0.gif](https://github.com/stevfu/CACC-RL/blob/main/trained_agent/td3_followCar_v1_2.gif))
+![followCar](trained_agent/td3_followCar_v1_2.gif)
 
 ## Changelog 
 Version 0: Creation of initial designs and files 
