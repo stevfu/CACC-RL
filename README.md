@@ -34,3 +34,5 @@ On stable-baselines3 using TD3, after 3000 episodes on laptop 1650Ti-MaxQ:
 Version 0: Creation of initial designs and files 
 
 Version 1: Heavy rework on environment, with updated kinematics, reward and training conditions
+
+Version 1.1: Revised reward function, cleaned training data, and more visualization tools for training and testing values
