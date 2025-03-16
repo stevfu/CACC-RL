@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 from tqdm import trange
 
 from agilerl.components.replay_buffer import ReplayBuffer
@@ -14,8 +15,10 @@ from agilerl.utils.utils import (
 
 import gym_followCar
 
+if __name__ == "__main__":  
 
-if __name__ == "__main__":
+    all_mean_scores = []
+    rolling_avg = []
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -28,28 +31,30 @@ if __name__ == "__main__":
     INIT_HP = {
         "ALGO": "TD3",
         "POP_SIZE": 4,  # Population size
-        "BATCH_SIZE": 128,  # Batch size
+        "BATCH_SIZE": 32,  # Batch size
         "LR_ACTOR": 0.0001,  # Actor learning rate
-        "LR_CRITIC": 0.001,  # Critic learning rate
+        "LR_CRITIC": 0.0005,  # Critic learning rate
         "O_U_NOISE": True,  # Ornstein-Uhlenbeck action noise
-        "EXPL_NOISE": 0.1,  # Action noise scale
+        "EXPL_NOISE": 0.2,  # Action noise scale
         "MEAN_NOISE": 0.0,  # Mean action noise
-        "THETA": 0.15,  # Rate of mean reversion in OU noise
+        "THETA": 0.05,  # Rate of mean reversion in OU noise
         "DT": 0.01,  # Timestep for OU noise
         "GAMMA": 0.99,  # Discount factor
-        "MEMORY_SIZE": 100_000,  # Max memory buffer size
-        "POLICY_FREQ": 2,  # Policy network update frequency
+        "MEMORY_SIZE": 10_000,  # Max memory buffer size
+        "POLICY_FREQ": 1,  # Policy network update frequency
         "LEARN_STEP": 1,  # Learning frequency
-        "TAU": 0.005,  # For soft update of target parameters
+        "TAU": 0.0025,  # For soft update of target parameters
+
         # Swap image channels dimension from last to first [H, W, C] -> [C, H, W]
         "CHANNELS_LAST": False,  # Use with RGB states
-        "EPISODES": 1000,  # Number of episodes to train for
-        "EVO_EPOCHS": 20,  # Evolution frequency, i.e. evolve after every 20 episodes
-        "TARGET_SCORE": 200.0,  # Target score that will beat the environment
+        
+        "EPISODES": 5,  # Number of episodes to train for
+        "EVO_EPOCHS": 1,  # Evolution frequency, i.e. evolve after every 20 episodes
+        "TARGET_SCORE": 100.0,  # Target score that will beat the environment
         "EVO_LOOP": 3,  # Number of evaluation episodes
         "MAX_STEPS": 500,  # Maximum number of steps an agent takes in an environment
-        "LEARNING_DELAY": 1000,  # Steps before starting learning
-        "EVO_STEPS": 10000,  # Evolution frequency
+        "LEARNING_DELAY": 0,  # Steps before starting learning
+        "EVO_STEPS":100,  # Evolution frequencys
         "EVAL_STEPS": None,  # Number of evaluation steps per episode
         "EVAL_LOOP": 1,  # Number of evaluation episodes
         "TOURN_SIZE": 2,  # Tournament size
@@ -76,7 +81,7 @@ if __name__ == "__main__":
         "MAX_LEARN_STEP": 16,
     }
 
-    num_envs = 8
+    num_envs = 2
     env = make_vect_envs("followCar-v1", num_envs=num_envs)  # Create environment
     observation_space = env.single_observation_space
     action_space = env.single_action_space
@@ -120,8 +125,8 @@ if __name__ == "__main__":
         device=device,
     )
 
-    max_steps = 200000  # Max steps
-    learning_delay = 1000  # Steps before starting learning
+    max_steps = INIT_HP["MAX_STEPS"] # Max steps
+    learning_delay = INIT_HP["LEARNING_DELAY"]
 
     # Exploration params
     eps_start = 1.0  # Max exploration
@@ -129,9 +134,9 @@ if __name__ == "__main__":
     eps_decay = 0.995  # Decay per episode
     epsilon = eps_start
 
-    evo_steps = 10000  # Evolution frequency
-    eval_steps = None  # Evaluation steps per episode - go until done
-    eval_loop = 1  # Number of evaluation episodes
+    evo_steps = INIT_HP["EVO_STEPS"]  # Evolution frequency
+    eval_steps = INIT_HP["EVAL_STEPS"] # Evaluation steps per episode - go until done
+    eval_loop = INIT_HP["EVAL_LOOP"]  # Number of evaluation episodes
 
     total_steps = 0
 
@@ -219,13 +224,17 @@ if __name__ == "__main__":
             for agent in pop
         ]
         mean_scores = [
-            (
-                np.mean(episode_scores)
-                if len(episode_scores) > 0
-                else "0 completed episodes"
-            )
+            np.mean(episode_scores) if len(episode_scores) > 0 else 0.0
             for episode_scores in pop_episode_scores
         ]
+
+        all_mean_scores.append(np.mean(mean_scores) if mean_scores else 0)
+
+        if len(all_mean_scores) >= 10:
+            rolling_avg.append(np.mean(all_mean_scores[-10:]))  # Moving average of last 10 episodes
+        else:
+            rolling_avg.append(np.mean(all_mean_scores))  # If less than 10, take current avg
+        
 
         print(f"--- Global steps {total_steps} ---")
         print(f"Steps {[agent.steps[-1] for agent in pop]}")
@@ -242,6 +251,20 @@ if __name__ == "__main__":
         # Update step counter
         for agent in pop:
             agent.steps.append(agent.steps[-1])
+
+    best_agent_path = "trained_agent/agileRL_TD3_followCar_v2.pt"
+    agent.save_checkpoint(best_agent_path)
+
+    # Plot rolling avg. of reward over time 
+    plt.figure(figsize=(10, 5))
+    plt.plot(rolling_avg, label="Rolling Avg (Last 10 Episodes)", color="blue")
+    plt.xlabel("Training Iterations")
+    plt.ylabel("Average Score")
+    plt.title("Training Progress")
+    plt.legend()
+    plt.grid()
+    plt.savefig("trained_agent/avgScore_2")
+    plt.show()
 
     pbar.close()
     env.close()

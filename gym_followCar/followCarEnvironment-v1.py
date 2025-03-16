@@ -48,9 +48,9 @@ class followCar_v1(gym.Env[np.ndarray, Union[int, np.ndarray]]):
 
 
     ## Starting State 
-    The Leader Position is 25m ahead of the follower, while the Follower Position starts at 0 
+    The Leader Position is ahead of the follower, while the Follower Position starts a random distance of 25m - 50m behind
     Leader Velocity will start at the first "frame_id" of the velocity profile
-    Follower Velocity will start at 0 
+    Follower Velocity will start at a random velocity within +3m/s or -3m/s of the leader velocity 
 
     ## Episode End 
     The episode ends if: 
@@ -193,12 +193,18 @@ class followCar_v1(gym.Env[np.ndarray, Union[int, np.ndarray]]):
 
         max_timeHeadway = 15  # Cap for extreme cases
         normalized_timeHeadway = min(abs(self.timeHeadway), max_timeHeadway)
+        x = max(1e-6, abs(normalized_timeHeadway - 1.5))  # Ensures x > 0
+
+        # Values for reward function: https://www.desmos.com/calculator/xnucpurjxa
+        mew = 0.4226 
+        sigma = 0.4365
         reward = (
-              (5) * np.exp(-((normalized_timeHeadway - 2.5) ** 2) / (3)) # Gaussian distribution proximity reward gives better encouragement 
+              #(5) * np.exp(-(x ** 2) / (3)) # Gaussian distribution proximity reward gives better encouragement 
+              (10) * (1/(x*sigma*np.sqrt(2*np.pi)))*np.exp(-((np.log(x)-mew)**2)/(2*(sigma**2))) ## Log normal probability distribution proximity reward 
             - (25) * (distanceHeadway <= 0 ) # collision
             - (10) * (abs(self.timeHeadway) > max_timeHeadway and distanceHeadway > 100) # too far away 
             - (0.1) * abs(self.prevAcceleration-self.followerAcceleration) # discourages large acceleration changes 
-            - (1) * (self.followerVelocity < 0) # discourages going backwards 
+            - (100) * (self.followerVelocity < 0) # discourages going backwards 
         )
 
         # Termination:
@@ -215,18 +221,21 @@ class followCar_v1(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         )
 
         # Check bounds to make sure we are still in, otherwise break 
+        '''
         if terminated or truncated: 
             print(f"Total Episode Time: {self.time:.2f}")
             print(f"Total Reward: {reward:.2f}")
             if terminated: 
                 print("Episode Terminated\n")
             else: 
-                print("Episode Truncated\n")
+                print("Episode Truncated\n")'
+        '''
 
         if self.render_mode == "human": 
             self.render()
         
-        return self.normalization(self.state), reward, terminated, truncated, {}
+        
+        return self.normalization(self.state), reward, terminated, truncated, {"Vehicle ID":self.vehicleID}
 
     def reset(self, *,seed: Optional[int] = None, options: Optional[dict] = None,):
 
@@ -242,7 +251,8 @@ class followCar_v1(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         self.vehicleID = self.unique_vehicle_ids[np.random.randint(0,len(self.unique_vehicle_ids))]
         
         # Same as initialization
-        self.state = (self.initialLeaderPosition,self.leaderVelocity,self.initialLeaderPosition-25,np.random.uniform(0,15)) # state = (leaderPosition, leaderVelocity, followerPosition, self.followerVelocity)
+        self.state = (self.initialLeaderPosition,self.leaderVelocity,self.initialLeaderPosition-np.random.uniform(25,50),np.random.uniform(self.leaderVelocity-3,self.leaderVelocity+3)) 
+        # state = (leaderPosition, leaderVelocity, followerPosition, self.followerVelocity)
 
         if self.render_mode == "human": 
             self.render() 

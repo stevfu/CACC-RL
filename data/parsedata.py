@@ -32,10 +32,11 @@ for vehicle_id in unique_vehicle_ids:
     vehicle_data = data[data["Vehicle_ID"] == vehicle_id].sort_values(by="Frame_ID")
     
     # Store both velocity and acceleration as NumPy arrays
-    velocityProfiles[vehicle_id_str] = {
-        "frame_id": vehicle_data["Frame_ID"].to_numpy(),
-        "velocity": vehicle_data["Mean_Speed"].to_numpy(),
-    }
+    if vehicle_data["Mean_Speed"].size > 180 and vehicle_data["Mean_Speed"].min() >= 3: 
+        velocityProfiles[vehicle_id_str] = {
+            "frame_id": vehicle_data["Frame_ID"].to_numpy(),
+            "velocity": vehicle_data["Mean_Speed"].to_numpy(),
+        }
 
 # Test dictionary 
 example_id = str(515)
@@ -51,11 +52,11 @@ velocityProfiles = {key: {subkey: convert_numpy(value) for subkey, value in subd
                     for key, subdict in velocityProfiles.items()}
 
 # Save dictionary as .json file 
-with open("velocityProfiles.json","w") as f: 
+with open("data/velocityProfiles.json","w") as f: 
     json.dump(velocityProfiles,f,indent=4)
 
 # Test .json file 
-with open("velocityProfiles.json","r") as f: 
+with open("data/velocityProfiles.json","r") as f: 
     newVelocityProfiles = json.load(f) 
 
 example_id = str(15); 
