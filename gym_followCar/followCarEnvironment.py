@@ -2,6 +2,7 @@
 # Dependencies
 
 import math
+import random
 from typing import Optional, Tuple, Union
 import numpy as np
 import gymnasium as gym 

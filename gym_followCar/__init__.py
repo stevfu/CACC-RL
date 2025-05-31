@@ -10,4 +10,7 @@ register(
   entry_point="gym_followCar.followCarEnvironment:followCar"
 )
 
-
+register(
+  id="multiCar-v1",
+  entry_point="gym_followCar.multiCarEnv:parallel_env"
+)

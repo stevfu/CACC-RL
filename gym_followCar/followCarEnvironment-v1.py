@@ -162,7 +162,7 @@ class followCar_v1(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         self.leaderVelocity = self.velocityProfiles[self.vehicleID]["velocity"][self.leaderVelocityCounter] * 0.3048 # conversion from feet/sec to m/sec
         self.leaderVelocityCounter += 1
         leaderPosition += self.leaderVelocity * self.tau
-        self.followerVelocity = np.clip(self.followerVelocity, -33, 33)
+        self.followerVelocity = np.clip(self.followerVelocity, 0, 33) 
         self.followerAcceleration = action[0] * 3 # choose acceleration between -3m/s^2 to 3m/s^2
         self.followerVelocity += self.followerAcceleration * self.tau
         self.normalizedFollowerVelocity = max(0, self.followerVelocity) ## Prevent backwards movement 
@@ -183,7 +183,7 @@ class followCar_v1(gym.Env[np.ndarray, Union[int, np.ndarray]]):
             self.timeHeadway = float('inf') # Avoid division by zero 
         else: 
             self.timeHeadway = distanceHeadway / self.normalizedFollowerVelocity
-        
+          
         '''
         Reward function based on the follow factors: 
         - Proximity: Can the car keep a time headway that is close to 2.5s? 
@@ -193,7 +193,7 @@ class followCar_v1(gym.Env[np.ndarray, Union[int, np.ndarray]]):
 
         max_timeHeadway = 15  # Cap for extreme cases
         normalized_timeHeadway = min(abs(self.timeHeadway), max_timeHeadway)
-        x = max(1e-6, abs(normalized_timeHeadway - 1.5))  # Ensures x > 0
+        x = max(1e-6, abs(normalized_timeHeadway))  # Ensures x > 0
 
         # Values for reward function: https://www.desmos.com/calculator/xnucpurjxa
         mew = 0.4226 
@@ -246,6 +246,7 @@ class followCar_v1(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         self.reward = 0
         self.leaderVelocityCounter = 0
         self.timeHeadway = 0
+        self.leaderVelocity = self.velocityProfiles[self.vehicleID]["velocity"][self.leaderVelocityCounter] * 0.3048
 
         # Generate new vehicleID
         self.vehicleID = self.unique_vehicle_ids[np.random.randint(0,len(self.unique_vehicle_ids))]
@@ -257,7 +258,7 @@ class followCar_v1(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         if self.render_mode == "human": 
             self.render() 
 
-        print("Vehicle ID:", self.vehicleID)
+        #print("Vehicle ID:", self.vehicleID)
         return self.normalization(self.state), {}
     
     def render(self): 
@@ -300,7 +301,6 @@ class followCar_v1(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         world_width = self.positionThreshold + 50
         carHeight = 25
         carWidth = 50
-
         x = self.state
 
         self.surf = pygame.Surface((self.screen_width, self.screen_height))

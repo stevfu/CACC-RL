@@ -26,7 +26,7 @@ class EpisodeLimitCallback(BaseCallback):
         return True
 
 # Initialize environment
-env = gym.make("followCar-v1", render_mode="human")
+env = gym.make("followCar", render_mode="human")
 
 # The noise objects for TD3
 n_actions = env.action_space.shape[-1]

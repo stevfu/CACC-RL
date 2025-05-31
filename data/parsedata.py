@@ -32,11 +32,13 @@ for vehicle_id in unique_vehicle_ids:
     vehicle_data = data[data["Vehicle_ID"] == vehicle_id].sort_values(by="Frame_ID")
     
     # Store both velocity and acceleration as NumPy arrays
-    if vehicle_data["Mean_Speed"].size > 180 and vehicle_data["Mean_Speed"].min() >= 3: 
+    if vehicle_data["Mean_Speed"].size > 180 and vehicle_data["Mean_Speed"].min() >= 9.84252: #feet/s
         velocityProfiles[vehicle_id_str] = {
             "frame_id": vehicle_data["Frame_ID"].to_numpy(),
             "velocity": vehicle_data["Mean_Speed"].to_numpy(),
         }
+
+
 
 # Test dictionary 
 example_id = str(515)
