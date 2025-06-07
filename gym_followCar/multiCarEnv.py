@@ -94,14 +94,14 @@ class ParallelCarEnv(ParallelEnv):
         if hasattr(self, "followers") and len(self.followers) == self.n_followers:
             # If followers already exist, reset their positions and velocities
             for i, follower in enumerate(self.followers):
-                follower.initial_position = self.leader_position - 50 * (i + 1) - random.uniform(0, 5)
+                follower.initial_position = self.leader_position - 50 * (i + 1) - random.uniform(-10, 10)
                 follower.initial_velocity = np.clip(self.leader_velocity + random.uniform(-3, 3), 0, 33)
                 follower.reset()
         else:
             # Create new followers if they don't exist 
             self.followers = [
                 Car(
-                    initial_position=self.leader_position - 50 * (i + 1) - random.uniform(0, 5),
+                    initial_position=self.leader_position - 50 * (i + 1) - random.uniform(-10, 10),
                     initial_velocity=np.clip(self.leader_velocity + random.uniform(-3, 3), 0, 33)
                 ) for i in range(self.n_followers)
     ]
@@ -140,6 +140,19 @@ class ParallelCarEnv(ParallelEnv):
                 velocity = self.followers[i-1].velocity
             distanceHeadway = front_position - self.followers[i].position
             timeHeadway = distanceHeadway / (velocity + 1e-6) 
+            relativeVelocity = velocity - self.followers[i].velocity
+
+            # Time to collision
+            ttc_threshold = 4  # seconds
+            if relativeVelocity > 0:  # If follower is slower than the car in front
+                timeToCollision = distanceHeadway / relativeVelocity
+                if 0 < timeToCollision <= ttc_threshold: 
+                    ttcPenalty = np.log(timeToCollision/ttc_threshold); 
+                else: 
+                    ttcPenalty = 0
+            
+            else: 
+                ttcPenalty = 0
 
             # Reward based on log-normal distribution (encouraging time headway ~ 1.5s)
             mew = 0.4226
@@ -147,17 +160,19 @@ class ParallelCarEnv(ParallelEnv):
             x = max(1e-6, abs(timeHeadway))
             reward = (
               (10) * (1/(x*sigma*np.sqrt(2*np.pi)))*np.exp(-((np.log(x)-mew)**2)/(2*(sigma**2))) ## Log normal probability distribution proximity reward 
-            - (25) * (distanceHeadway <= self.car_length ) # collision
-            - (10) * (abs(timeHeadway) > max_timeHeadway and distanceHeadway > 100) # too far away 
+            + (2) * ttcPenalty
+            - (50) * (distanceHeadway <= self.car_length ) # collision
+            #- (10) * (abs(timeHeadway) > max_timeHeadway and distanceHeadway > 100) # too far away 
             - (0.1) * abs(self.followers[i].previous_acceleration-self.followers[i].acceleration) # discourages large acceleration changes 
             - (100) * (self.followers[i].velocity < 0) # discourages going backwards 
             )
             self.rewards[agent] = reward #each agent gets its own reward 
 
             # Termination 
-            if distanceHeadway <= self.car_length or abs(timeHeadway) > max_timeHeadway and distanceHeadway > 100: 
+            if distanceHeadway <= self.car_length:
+            #or abs(timeHeadway) > max_timeHeadway and distanceHeadway > 100: 
                 self.terminations[agent] = True
-                print("Rewards: ", self.rewards)
+                print("\nRewards: ", self.rewards)
             else:   
                 self.terminations[agent] = False
             
@@ -165,7 +180,7 @@ class ParallelCarEnv(ParallelEnv):
         for agent in self.agents:
             if self.leader_velocity_counter >= len(self.velocity_profiles[self.vehicle_id]["velocity"]) or self.leader_position >= self.position_threshold:
                 self.truncations[agent] = True
-                print("Rewards: ", self.rewards)
+                print("\nRewards: ", self.rewards)
             else: 
                 self.truncations[agent] = False 
 

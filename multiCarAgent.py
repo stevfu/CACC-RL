@@ -90,15 +90,18 @@ if __name__ == "__main__":
         "POLICY_FREQ": 2,  # Policy frequnecy
     }
 
-    num_envs = 4
+    num_envs = 2
+    num_followers = 3
     # Define the simple speaker listener environment as a parallel environment
     env = AsyncPettingZooVecEnv(
     [
-        lambda: ParallelCarEnv(n_followers=3, render_mode=None)
+        lambda: ParallelCarEnv(n_followers=num_followers, render_mode="rgb_array")
         for _ in range(num_envs)
     ]
 )
     env.reset()
+
+    agent_ids = env.possible_agents
 
     # Configure the multi-agent algo input arguments
     observation_spaces = [env.single_observation_space(agent) for agent in env.agents]
@@ -166,7 +169,7 @@ if __name__ == "__main__":
     )
 
     # Define training loop parameters
-    max_steps = 1000000  # Max steps 
+    max_steps = 1000000 # Max steps 
     learning_delay = 1000  # Steps before starting learning
     evo_steps = 1000  # Evolution frequency
     eval_steps = None  # Evaluation steps per episode - go until done
@@ -283,7 +286,7 @@ if __name__ == "__main__":
             # Evaluate population
             fitnesses = []
             for agent in pop:
-                base_env = ParallelCarEnv(n_followers=3,render_mode=None)
+                base_env = ParallelCarEnv(n_followers=num_followers,render_mode=None)
                 test_env = EarlyTerminationWrapper(base_env)
                 agent.agent_ids = test_env.agents
                 obs, info = test_env.reset()
@@ -322,7 +325,7 @@ if __name__ == "__main__":
 
         # Save the trained algorithm
         path = "./trained_agent/MATD3"
-        filename = "multiCarAgent_1.5.pt"
+        filename = "multiCarAgent_2.pt"
         os.makedirs(path, exist_ok=True)
         save_path = os.path.join(path, filename)
         elite.save_checkpoint(save_path)
