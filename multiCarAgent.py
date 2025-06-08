@@ -75,7 +75,7 @@ if __name__ == "__main__":
         "ALGO": "MATD3",  # Algorithm
         # Swap image channels dimension from last to first [H, W, C] -> [C, H, W]
         "CHANNELS_LAST": False,
-        "BATCH_SIZE": 128,  # Batch size
+        "BATCH_SIZE": 512,  # Batch size
         "O_U_NOISE": True,  # Ornstein Uhlenbeck action noise
         "EXPL_NOISE": 0.1,  # Action noise scale
         "MEAN_NOISE": 0.0,  # Mean action noise
@@ -90,12 +90,12 @@ if __name__ == "__main__":
         "POLICY_FREQ": 2,  # Policy frequnecy
     }
 
-    num_envs = 2
+    num_envs = 24
     num_followers = 3
     # Define the simple speaker listener environment as a parallel environment
     env = AsyncPettingZooVecEnv(
     [
-        lambda: ParallelCarEnv(n_followers=num_followers, render_mode="rgb_array")
+        lambda: ParallelCarEnv(n_followers=num_followers, render_mode="None")
         for _ in range(num_envs)
     ]
 )
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     )
 
     # Define training loop parameters
-    max_steps = 1000000 # Max steps 
+    max_steps = 2000000 # Max steps 
     learning_delay = 1000  # Steps before starting learning
     evo_steps = 1000  # Evolution frequency
     eval_steps = None  # Evaluation steps per episode - go until done
@@ -182,6 +182,7 @@ if __name__ == "__main__":
     try:
         print("Training...")
         pbar = trange(max_steps, unit="step")
+        last_min_steps = 0
         while np.less([agent.steps[-1] for agent in pop], max_steps).all():
             pop_episode_scores = []
             for agent in pop:  # Loop through population
@@ -277,7 +278,6 @@ if __name__ == "__main__":
                         break
                 
                 obs, info = env.reset()  # Reset environment after episode ends
-                pbar.update(evo_steps // len(pop))
 
                 agent.steps[-1] += steps
                 pop_episode_scores.append(completed_episode_scores)
@@ -323,15 +323,25 @@ if __name__ == "__main__":
             for agent in pop:
                 agent.steps.append(agent.steps[-1])
 
+            # --- Progress bar update ---
+            current_min_steps = min(agent.steps[-1] for agent in pop)
+            pbar.update(current_min_steps - last_min_steps)
+            last_min_steps = current_min_steps
+
         # Save the trained algorithm
         path = "./trained_agent/MATD3"
-        filename = "multiCarAgent_2.pt"
+        filename = "multiCarAgent_1.pt"
         os.makedirs(path, exist_ok=True)
         save_path = os.path.join(path, filename)
         elite.save_checkpoint(save_path)
 
     except KeyboardInterrupt: 
         print("Training interrupted by user.")
+        path = "./trained_agent/MATD3"
+        filename = "multiCarAgent_interrupted.pt"
+        os.makedirs(path, exist_ok=True)
+        save_path = os.path.join(path, filename)
+        elite.save_checkpoint(save_path)
     
     finally:
         pbar.close()

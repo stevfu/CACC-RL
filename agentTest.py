@@ -200,7 +200,7 @@ if agent == "multi":
 
     # --- Parameters ---
     n_followers = 3  # Set to match your training
-    agent_path = "trained_agent/MATD3/multiCarAgent_1.pt"
+    agent_path = "trained_agent/MATD3/multiCarAgent_3.pt"
 
     # --- Load environment ---
     env = ParallelCarEnv(n_followers=n_followers, render_mode="rgb_array")
@@ -231,7 +231,7 @@ if agent == "multi":
     env.close()
 
     # Save as GIF
-    gif_path = "trained_agent/MATD3/multiCarAgent_1_eval.gif"
+    gif_path = "trained_agent/MATD3/multiCarAgent_3_eval.gif"
     if frames:
         frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=50, loop=0)
         print(f"GIF saved at {gif_path}")

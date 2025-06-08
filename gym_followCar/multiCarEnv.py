@@ -160,10 +160,10 @@ class ParallelCarEnv(ParallelEnv):
             x = max(1e-6, abs(timeHeadway))
             reward = (
               (10) * (1/(x*sigma*np.sqrt(2*np.pi)))*np.exp(-((np.log(x)-mew)**2)/(2*(sigma**2))) ## Log normal probability distribution proximity reward 
-            + (2) * ttcPenalty
-            - (50) * (distanceHeadway <= self.car_length ) # collision
+            + (10) * ttcPenalty
+            - (250) * (distanceHeadway <= self.car_length ) # collision
             #- (10) * (abs(timeHeadway) > max_timeHeadway and distanceHeadway > 100) # too far away 
-            - (0.1) * abs(self.followers[i].previous_acceleration-self.followers[i].acceleration) # discourages large acceleration changes 
+            - (1) * abs(self.followers[i].previous_acceleration-self.followers[i].acceleration) # discourages large acceleration changes 
             - (100) * (self.followers[i].velocity < 0) # discourages going backwards 
             )
             self.rewards[agent] = reward #each agent gets its own reward 
@@ -172,7 +172,7 @@ class ParallelCarEnv(ParallelEnv):
             if distanceHeadway <= self.car_length:
             #or abs(timeHeadway) > max_timeHeadway and distanceHeadway > 100: 
                 self.terminations[agent] = True
-                print("\nRewards: ", self.rewards)
+                #print("\nRewards: ", self.rewards)
             else:   
                 self.terminations[agent] = False
             
@@ -180,7 +180,7 @@ class ParallelCarEnv(ParallelEnv):
         for agent in self.agents:
             if self.leader_velocity_counter >= len(self.velocity_profiles[self.vehicle_id]["velocity"]) or self.leader_position >= self.position_threshold:
                 self.truncations[agent] = True
-                print("\nRewards: ", self.rewards)
+                #print("\nRewards: ", self.rewards)
             else: 
                 self.truncations[agent] = False 
 
