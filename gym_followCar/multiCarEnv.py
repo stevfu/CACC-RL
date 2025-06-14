@@ -8,11 +8,38 @@ from gymnasium import spaces
 from pettingzoo.utils.env import ParallelEnv
 from pettingzoo.utils.conversions import parallel_wrapper_fn
 
+class RunningMeanStd:
+    def __init__(self, epsilon=1e-4):
+        self.mean = 0.0
+        self.var = 1.0
+        self.count = epsilon
+
+    def update(self, x):
+        batch_mean = np.mean(x)
+        batch_var = np.var(x)
+        batch_count = len(x)
+        delta = batch_mean - self.mean
+        tot_count = self.count + batch_count
+
+        new_mean = self.mean + delta * batch_count / tot_count
+        m_a = self.var * self.count
+        m_b = batch_var * batch_count
+        M2 = m_a + m_b + delta ** 2 * self.count * batch_count / tot_count
+        new_var = M2 / tot_count
+        new_count = tot_count
+
+        self.mean = new_mean
+        self.var = new_var
+        self.count = new_count
+
+    @property
+    def std(self):
+        return np.sqrt(self.var)
+
 
 
 
 class Car:
-
     
     # Initializes position and velocity of car 
     def __init__(self, initial_position, initial_velocity): 
@@ -56,6 +83,7 @@ class ParallelCarEnv(ParallelEnv):
         self.screen = None
         self.clock = None
         self.car_length = 5 # Length of the car in meters
+        self.reward_rms = RunningMeanStd()
 
         # Load velocity profiles
         with open("data/velocityProfiles.json", "r") as f:
@@ -140,19 +168,20 @@ class ParallelCarEnv(ParallelEnv):
                 velocity = self.followers[i-1].velocity
             distanceHeadway = front_position - self.followers[i].position
             timeHeadway = distanceHeadway / (velocity + 1e-6) 
-            relativeVelocity = velocity - self.followers[i].velocity
+            relativeVelocity = self.followers[i].velocity - velocity
 
             # Time to collision
             ttc_threshold = 4  # seconds
-            if relativeVelocity > 0:  # If follower is slower than the car in front
+            if relativeVelocity > 0:  # If follower is faster than the car in front
                 timeToCollision = distanceHeadway / relativeVelocity
                 if 0 < timeToCollision <= ttc_threshold: 
                     ttcPenalty = np.log(timeToCollision/ttc_threshold); 
                 else: 
                     ttcPenalty = 0
             
-            else: 
-                ttcPenalty = 0
+            else:  # If follower is slower than the car in front 
+                ttcPenalty = 0 
+                
 
             # Reward based on log-normal distribution (encouraging time headway ~ 1.5s)
             mew = 0.4226
@@ -160,13 +189,14 @@ class ParallelCarEnv(ParallelEnv):
             x = max(1e-6, abs(timeHeadway))
             reward = (
               (10) * (1/(x*sigma*np.sqrt(2*np.pi)))*np.exp(-((np.log(x)-mew)**2)/(2*(sigma**2))) ## Log normal probability distribution proximity reward 
-            + (10) * ttcPenalty
-            - (250) * (distanceHeadway <= self.car_length ) # collision
+            + (5) * ttcPenalty
+            - (100) * (distanceHeadway <= self.car_length ) # collision
             #- (10) * (abs(timeHeadway) > max_timeHeadway and distanceHeadway > 100) # too far away 
-            - (1) * abs(self.followers[i].previous_acceleration-self.followers[i].acceleration) # discourages large acceleration changes 
-            - (100) * (self.followers[i].velocity < 0) # discourages going backwards 
+            - (4) * abs(self.followers[i].previous_acceleration-self.followers[i].acceleration) # discourages large acceleration changes 
+            - (500) * (self.followers[i].velocity < 0) # discourages going backwards 
             )
-            self.rewards[agent] = reward #each agent gets its own reward 
+
+            self.rewards[agent] = reward
 
             # Termination 
             if distanceHeadway <= self.car_length:
@@ -190,8 +220,17 @@ class ParallelCarEnv(ParallelEnv):
 
         #print("Terminations: ", self.terminations)
         #print("Truncations: ", self.truncations)
+
+        # Normalize rewards
+        '''
+        reward_values = np.array(list(self.rewards.values()))
+        self.reward_rms.update(reward_values)
+        for agent in self.rewards:
+            self.rewards[agent] = (self.rewards[agent] - self.reward_rms.mean) / (self.reward_rms.std + 1e-8)
+        '''
+        
         return self._get_observations(), self.rewards, self.terminations, self.truncations, self.infos
-    
+        
 
     def _get_observations(self):
         observations = {}

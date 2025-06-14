@@ -57,6 +57,7 @@ class EarlyTerminationWrapper(ParallelEnv):
 if __name__ == "__main__":
     print(torch.cuda.is_available())
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     
 
     # Define the network configuration
@@ -75,22 +76,22 @@ if __name__ == "__main__":
         "ALGO": "MATD3",  # Algorithm
         # Swap image channels dimension from last to first [H, W, C] -> [C, H, W]
         "CHANNELS_LAST": False,
-        "BATCH_SIZE": 512,  # Batch size
+        "BATCH_SIZE": 128,  # Batch size
         "O_U_NOISE": True,  # Ornstein Uhlenbeck action noise
-        "EXPL_NOISE": 0.1,  # Action noise scale
+        "EXPL_NOISE": 0.2,  # Action noise scale
         "MEAN_NOISE": 0.0,  # Mean action noise
-        "THETA": 0.15,  # Rate of mean reversion in OU noise
-        "DT": 0.01,  # Timestep for OU noise
+        "THETA": 0.2,  # Rate of mean reversion in OU noise
+        "DT": 0.05,  # Timestep for OU noise
         "LR_ACTOR": 0.001,  # Actor learning rate
         "LR_CRITIC": 0.001,  # Critic learning rate
         "GAMMA": 0.99,  # Discount factor
         "MEMORY_SIZE": 100000,  # Max memory buffer size
         "LEARN_STEP": 100,  # Learning frequency
-        "TAU": 0.01,  # For soft update of target parameters
+        "TAU": 0.005,  # For soft update of target parameters
         "POLICY_FREQ": 2,  # Policy frequnecy
     }
 
-    num_envs = 24
+    num_envs = 32
     num_followers = 3
     # Define the simple speaker listener environment as a parallel environment
     env = AsyncPettingZooVecEnv(
@@ -169,14 +170,22 @@ if __name__ == "__main__":
     )
 
     # Define training loop parameters
-    max_steps = 2000000 # Max steps 
-    learning_delay = 1000  # Steps before starting learning
-    evo_steps = 1000  # Evolution frequency
+    max_steps = 8000000 # Max steps 
+    learning_delay = 2000  # Steps before starting learning
+    evo_steps = 2000  # Evolution frequency
     eval_steps = None  # Evaluation steps per episode - go until done
-    eval_loop = 1  # Number of evaluation episodes
+    eval_loop = 3 # Number of evaluation episodes
     elite = pop[0]  # Assign a placeholder "elite" agent
 
     total_steps = 0
+
+    # --- Load checkpoint if resuming ---
+    resume_path = "./trained_agent/MATD3/multiCarAgent_10.pt"
+    if os.path.exists(resume_path):
+        print(f"Loading checkpoint from {resume_path}")
+        elite.load_checkpoint(resume_path)
+        for agent in pop:
+            agent.load_checkpoint(resume_path)
 
     # TRAINING LOOP
     try:
@@ -330,7 +339,7 @@ if __name__ == "__main__":
 
         # Save the trained algorithm
         path = "./trained_agent/MATD3"
-        filename = "multiCarAgent_1.pt"
+        filename = "multiCarAgent_11.pt"
         os.makedirs(path, exist_ok=True)
         save_path = os.path.join(path, filename)
         elite.save_checkpoint(save_path)
