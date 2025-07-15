@@ -8,37 +8,7 @@ from gymnasium import spaces
 from pettingzoo.utils.env import ParallelEnv
 from pettingzoo.utils.conversions import parallel_wrapper_fn
 
-class RunningMeanStd:
-    def __init__(self, epsilon=1e-4):
-        self.mean = 0.0
-        self.var = 1.0
-        self.count = epsilon
-
-    def update(self, x):
-        batch_mean = np.mean(x)
-        batch_var = np.var(x)
-        batch_count = len(x)
-        delta = batch_mean - self.mean
-        tot_count = self.count + batch_count
-
-        new_mean = self.mean + delta * batch_count / tot_count
-        m_a = self.var * self.count
-        m_b = batch_var * batch_count
-        M2 = m_a + m_b + delta ** 2 * self.count * batch_count / tot_count
-        new_var = M2 / tot_count
-        new_count = tot_count
-
-        self.mean = new_mean
-        self.var = new_var
-        self.count = new_count
-
-    @property
-    def std(self):
-        return np.sqrt(self.var)
-
-
-
-
+# "Car" object for each follower car in environment 
 class Car:
     
     # Initializes position and velocity of car 
@@ -53,6 +23,7 @@ class Car:
         self.position = self.initial_position
         self.velocity = self.initial_velocity
         self.acceleration = 0.0
+        self.previous_acceleration = 0.0
 
     # Step in environment 
     def step(self, action, tau):
@@ -65,34 +36,35 @@ class Car:
     # Return state 
     def get_state(self):
         return np.array([self.position, self.velocity], dtype=np.float32)
+    
 
-
+# Start of environment 
 class ParallelCarEnv(ParallelEnv):
 
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 60}
+    metadata = {"render_modes": ["human", "rgb_array", "debug"], "render_fps": 60}
 
     # Initializes the environment 
-    def __init__(self, n_followers=3, render_mode="human"): 
+    def __init__(self, n_followers=3, render_mode=None): 
         super().__init__()
 
         # Initial parameters 
         self.n_followers = n_followers
-        self.render_mode = render_mode
         self.tau = 0.1
-        self.position_threshold = 1000
+        self.position_threshold = 1000 # 1 km 
+        self.car_length = 5 # Length of the car in meters
+
+        self.render_mode = render_mode
         self.screen = None
         self.clock = None
-        self.car_length = 5 # Length of the car in meters
-        self.reward_rms = RunningMeanStd()
-
+        
         # Load velocity profiles
         with open("data/velocityProfiles.json", "r") as f:
             self.velocity_profiles = json.load(f)
         self.unique_vehicle_ids = list(self.velocity_profiles.keys())
 
-        # Spaces
-        obs_low = np.array([0, 0, 0,0], dtype=np.float32)
-        obs_high = np.array([self.position_threshold, 33, self.position_threshold, self.position_threshold], dtype=np.float32)
+        # Observation and Action Spaces
+        obs_low = np.array([0,0,0], dtype=np.float32) # [follower velocity, leader velocity, distance headway]
+        obs_high = np.array([1,1,1], dtype=np.float32) # [follower velocity, leader velocity, distance headway]
         self.observation_spaces = {
             f"follower_{i}": spaces.Box(low=obs_low, high=obs_high, dtype=np.float32)
             for i in range(self.n_followers)
@@ -110,6 +82,7 @@ class ParallelCarEnv(ParallelEnv):
         self.agents = [f"follower_{i}" for i in range(self.n_followers)]
         self.possible_agents = self.agents.copy()
 
+    # Initialize / Reset the environment
     def reset(self, seed=None, options=None):
         # Initial parameters 
         self.time = 0
@@ -122,17 +95,17 @@ class ParallelCarEnv(ParallelEnv):
         if hasattr(self, "followers") and len(self.followers) == self.n_followers:
             # If followers already exist, reset their positions and velocities
             for i, follower in enumerate(self.followers):
-                follower.initial_position = self.leader_position - 50 * (i + 1) - random.uniform(-10, 10)
-                follower.initial_velocity = np.clip(self.leader_velocity + random.uniform(-3, 3), 0, 33)
+                follower.initial_position = self.leader_position - 60 * (i + 1) - random.uniform(-5, 5)
+                follower.initial_velocity = np.clip(self.leader_velocity + random.uniform(-2, 2), 0, 33)
                 follower.reset()
         else:
             # Create new followers if they don't exist 
             self.followers = [
                 Car(
-                    initial_position=self.leader_position - 50 * (i + 1) - random.uniform(-10, 10),
-                    initial_velocity=np.clip(self.leader_velocity + random.uniform(-3, 3), 0, 33)
+                    initial_position=self.leader_position - 60 * (i + 1) - random.uniform(-5, 5),
+                    initial_velocity=np.clip(self.leader_velocity + random.uniform(-2, 2), 0, 33)
                 ) for i in range(self.n_followers)
-    ]
+            ]       
 
         # Reset all reward parameters 
         self.rewards = {agent: 0.0 for agent in self.agents}
@@ -144,20 +117,20 @@ class ParallelCarEnv(ParallelEnv):
         return observations, {}
 
     def step(self, actions):
-        # Move environment foward 
-        self.time += self.tau
+
+        self.time += self.tau # Move environment forward
 
         # Update leader
-        self.leader_velocity = self.velocity_profiles[self.vehicle_id]["velocity"][self.leader_velocity_counter] * 0.3048
-        self.leader_velocity_counter += 1
+        if self.leader_velocity_counter < len(self.velocity_profiles[self.vehicle_id]["velocity"]):
+            self.leader_velocity = self.velocity_profiles[self.vehicle_id]["velocity"][self.leader_velocity_counter] * 0.3048 
+            self.leader_velocity_counter += 1
         self.leader_position += self.leader_velocity * self.tau
 
         # Update followers
         for i, agent in enumerate(self.agents):
             self.followers[i].step(actions[agent], self.tau)
-
+    
         # Compute rewards, terminations, truncations
-        max_timeHeadway = 15  # Cap for extreme cases
         #[ follower[2] --> follower[1] --> follower[0] --> leader ]
         for i, agent in enumerate(self.agents):
             if i == 0: # if it is the follower car right behind the leader 
@@ -166,43 +139,56 @@ class ParallelCarEnv(ParallelEnv):
             else: # if it is a follower car right behind another follower car 
                 front_position = self.followers[i-1].position
                 velocity = self.followers[i-1].velocity
-            distanceHeadway = front_position - self.followers[i].position
-            timeHeadway = distanceHeadway / (velocity + 1e-6) 
+
+            distanceHeadway = front_position - self.followers[i].position - self.car_length
+            timeHeadway = distanceHeadway / (self.followers[i].velocity + 1e-6) 
             relativeVelocity = self.followers[i].velocity - velocity
 
-            # Time to collision
+            # Time To Collision (TTC) Penalty
             ttc_threshold = 4  # seconds
             if relativeVelocity > 0:  # If follower is faster than the car in front
                 timeToCollision = distanceHeadway / relativeVelocity
                 if 0 < timeToCollision <= ttc_threshold: 
-                    ttcPenalty = np.log(timeToCollision/ttc_threshold); 
+                    ttcPenalty = np.log10(timeToCollision/ttc_threshold); 
                 else: 
                     ttcPenalty = 0
-            
             else:  # If follower is slower than the car in front 
                 ttcPenalty = 0 
                 
-
             # Reward based on log-normal distribution (encouraging time headway ~ 1.5s)
+            normalized_timeHeadway = min(timeHeadway, 10) 
             mew = 0.4226
             sigma = 0.4365
-            x = max(1e-6, abs(timeHeadway))
-            reward = (
-              (10) * (1/(x*sigma*np.sqrt(2*np.pi)))*np.exp(-((np.log(x)-mew)**2)/(2*(sigma**2))) ## Log normal probability distribution proximity reward 
-            + (5) * ttcPenalty
-            - (100) * (distanceHeadway <= self.car_length ) # collision
-            #- (10) * (abs(timeHeadway) > max_timeHeadway and distanceHeadway > 100) # too far away 
-            - (4) * abs(self.followers[i].previous_acceleration-self.followers[i].acceleration) # discourages large acceleration changes 
-            - (500) * (self.followers[i].velocity < 0) # discourages going backwards 
-            )
+            x = max(1e-6, abs(normalized_timeHeadway))
+
+            lognorm = (1) * (1/(x*sigma*np.sqrt(2*np.pi)))*np.exp(-((np.log(x)-mew)**2)/(2*(sigma**2)))
+            #forward = (3) * min(self.followers[i].velocity/20, 1.0)
+            ttc = (1) * ttcPenalty
+            collision = (-50) * (distanceHeadway <= self.car_length)
+            #close = (-10) * max(0, (2*self.car_length - distanceHeadway) / self.car_length) * (distanceHeadway > self.car_length and distanceHeadway <= 2*self.car_length)
+            jerk = (-4) * abs(self.followers[i].previous_acceleration-self.followers[i].acceleration)
+            reverse = (-100) * (self.followers[i].velocity < 0)
+            #gap = (-8) * max(0, (distanceHeadway - 100) / 50)
+
+            reward = lognorm + ttc + collision + jerk + reverse 
 
             self.rewards[agent] = reward
+            # Store reward breakdown in infos
+            if self.render_mode == "debug":
+                self.infos[agent] = {
+                    "lognorm": lognorm,
+                    #"forward": forward,
+                    "ttc": ttc,
+                    "collision": collision,
+                    #"close": close,
+                    "jerk": jerk,
+                    "reverse": reverse,
+                    #"gap": gap
+                }
 
             # Termination 
-            if distanceHeadway <= self.car_length:
-            #or abs(timeHeadway) > max_timeHeadway and distanceHeadway > 100: 
+            if distanceHeadway <= self.car_length: 
                 self.terminations[agent] = True
-                #print("\nRewards: ", self.rewards)
             else:   
                 self.terminations[agent] = False
             
@@ -210,38 +196,32 @@ class ParallelCarEnv(ParallelEnv):
         for agent in self.agents:
             if self.leader_velocity_counter >= len(self.velocity_profiles[self.vehicle_id]["velocity"]) or self.leader_position >= self.position_threshold:
                 self.truncations[agent] = True
-                #print("\nRewards: ", self.rewards)
             else: 
                 self.truncations[agent] = False 
+        
+        # Gloabl Termination
+        if any(self.terminations.values()) or any(self.truncations.values()):
+            for agent in self.agents:
+                self.terminations[agent] = True
+                self.truncations[agent] = self.truncations.get(agent, False)
 
         # Render environment 
         if self.render_mode == "human":
             self.render()
-
-        #print("Terminations: ", self.terminations)
-        #print("Truncations: ", self.truncations)
-
-        # Normalize rewards
-        '''
-        reward_values = np.array(list(self.rewards.values()))
-        self.reward_rms.update(reward_values)
-        for agent in self.rewards:
-            self.rewards[agent] = (self.rewards[agent] - self.reward_rms.mean) / (self.reward_rms.std + 1e-8)
-        '''
         
         return self._get_observations(), self.rewards, self.terminations, self.truncations, self.infos
-        
 
+    # Normalized observations for each agent
     def _get_observations(self):
         observations = {}
         for i, agent in enumerate(self.agents):
             front_position = self.leader_position if i == 0 else self.followers[i - 1].position
+            front_velocity = self.leader_velocity if i == 0 else self.followers[i - 1].velocity
             state = self.followers[i].get_state()
             distanceHeadway = front_position - self.followers[i].position
-            observations[agent] = np.array([state[0]/self.position_threshold, 
-                                            state[1]/33, 
-                                            distanceHeadway/self.position_threshold, 
-                                            front_position/self.position_threshold], 
+            observations[agent] = np.array([state[1]/33, # Max velocity is 33 m/s
+                                            front_velocity/33, # Max velocity is 33 m/s
+                                            distanceHeadway/self.position_threshold], 
                                             dtype=np.float32) # normalized state 
         return observations
     
@@ -337,7 +317,7 @@ class ParallelCarEnv(ParallelEnv):
                     raise KeyboardInterrupt  # This will stop training
             self.clock.tick(self.metadata["render_fps"])
             pygame.display.flip()
-        elif self.render_mode == "rgb_array":
+        elif self.render_mode == "rgb_array" or self.render_mode == "debug":
             return np.transpose(
                 np.array(pygame.surfarray.pixels3d(self.screen)), axes=(1, 0, 2)
             )

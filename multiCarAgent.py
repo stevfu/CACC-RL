@@ -24,49 +24,49 @@ def has_nan_or_inf(d):
     arr = np.array(d)
     return np.isnan(arr).any() or np.isinf(arr).any()
 
+def update_learning_rates(agent, step):
+    if step % 200000 == 0 and step > 0:
+        agent.lr_actor *= 0.9
+        agent.lr_critic *= 0.9
+        # Update actor optimizers (plural)
+        for optimizer in agent.actor_optimizers:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = agent.lr_actor
+        # Update critic optimizers (plural)
+        for optimizer in agent.critic_optimizers:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = agent.lr_critic
+
 from pettingzoo.utils import ParallelEnv
 
-class EarlyTerminationWrapper(ParallelEnv):
-    def __init__(self, env):
-        self.env = env
-        self.metadata = getattr(env, "metadata", {})
-        self.possible_agents = env.possible_agents
-        self.agents = env.agents
-
-    def reset(self, *args, **kwargs):
-        obs, info = self.env.reset(*args, **kwargs)
-        self.agents = self.env.agents
-        return obs, info
-
-    def step(self, actions):
-        obs, reward, termination, truncation, info = self.env.step(actions)
-        # If any agent is done, set all to done
-        if any(termination.values()) or any(truncation.values()):
-            for agent in self.env.agents:
-                termination[agent] = True
-                truncation[agent] = truncation.get(agent, False)
-        return obs, reward, termination, truncation, info
-
-    def render(self, *args, **kwargs):
-        return self.env.render(*args, **kwargs)
-
-    def close(self):
-        return self.env.close()
-
-
 if __name__ == "__main__":
+
+    ########## USER PARAMETERS ##########
+    num_envs = 24
+
+    max_steps = 2000000 # Max steps 
+    learning_delay = 400  # Steps before starting learning
+    evo_steps = 250  # Evolution frequency
+    eval_steps = None  # Evaluation steps per episode - go until done
+    eval_loop = 1 # Number of evaluation episodes
+    resume = False
+    resume_path = "./trained_agent/MATD3/20250630_multi.pt"  # Path to resume training from
+
+    path = "./trained_agent/MATD3"
+    filename = "20250715_2_multi.pt"
+
+    #####################################
+
     print(torch.cuda.is_available())
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    
 
     # Define the network configuration
     NET_CONFIG = {
         "encoder_config": {
-            "hidden_size": [128, 128],  # Actor hidden size
+            "hidden_size": [128, 64],  # Actor hidden size
         },
         "head_config": {
-            "hidden_size": [128, 128],  # Critic hidden size
+            "hidden_size": [64, 32],  # Critic hidden size
         },
     }
 
@@ -78,30 +78,22 @@ if __name__ == "__main__":
         "CHANNELS_LAST": False,
         "BATCH_SIZE": 128,  # Batch size
         "O_U_NOISE": True,  # Ornstein Uhlenbeck action noise
-        "EXPL_NOISE": 0.2,  # Action noise scale
+        "EXPL_NOISE": 0.15,  # Reduced action noise scale for more stable learning
         "MEAN_NOISE": 0.0,  # Mean action noise
-        "THETA": 0.2,  # Rate of mean reversion in OU noise
+        "THETA": 0.25,  # Increased rate of mean reversion for faster noise decay
         "DT": 0.05,  # Timestep for OU noise
-        "LR_ACTOR": 0.001,  # Actor learning rate
+        "LR_ACTOR": 0.001,  # Reduced actor learning rate for stability
         "LR_CRITIC": 0.001,  # Critic learning rate
         "GAMMA": 0.99,  # Discount factor
         "MEMORY_SIZE": 100000,  # Max memory buffer size
-        "LEARN_STEP": 100,  # Learning frequency
-        "TAU": 0.005,  # For soft update of target parameters
-        "POLICY_FREQ": 2,  # Policy frequnecy
+        "LEARN_STEP": 4,  # Increased learning frequency
+        "TAU": 0.005,  # Slower soft update for more stable learning
+        "POLICY_FREQ": 1,  # Policy frequency
     }
 
-    num_envs = 32
-    num_followers = 3
-    # Define the simple speaker listener environment as a parallel environment
-    env = AsyncPettingZooVecEnv(
-    [
-        lambda: ParallelCarEnv(n_followers=num_followers, render_mode="None")
-        for _ in range(num_envs)
-    ]
-)
+    env = ParallelCarEnv(render_mode=None)
+    env = AsyncPettingZooVecEnv([lambda: env for _ in range(num_envs)])
     env.reset()
-
     agent_ids = env.possible_agents
 
     # Configure the multi-agent algo input arguments
@@ -161,90 +153,80 @@ if __name__ == "__main__":
         no_mutation=0.2,  # Probability of no mutation
         architecture=0.2,  # Probability of architecture mutation
         new_layer_prob=0.2,  # Probability of new layer mutation
-        parameters=0.2,  # Probability of parameter mutation
+        parameters=0.3,  # Probability of parameter mutation
         activation=0,  # Probability of activation function mutation
-        rl_hp=0.2,  # Probability of RL hyperparameter mutation
+        rl_hp=0.3,  # Probability of RL hyperparameter mutation
         mutation_sd=0.1,  # Mutation strength
         rand_seed=1,
         device=device,
     )
 
-    # Define training loop parameters
-    max_steps = 8000000 # Max steps 
-    learning_delay = 2000  # Steps before starting learning
-    evo_steps = 2000  # Evolution frequency
-    eval_steps = None  # Evaluation steps per episode - go until done
-    eval_loop = 3 # Number of evaluation episodes
     elite = pop[0]  # Assign a placeholder "elite" agent
-
     total_steps = 0
 
-    # --- Load checkpoint if resuming ---
-    resume_path = "./trained_agent/MATD3/multiCarAgent_10.pt"
-    if os.path.exists(resume_path):
-        print(f"Loading checkpoint from {resume_path}")
-        elite.load_checkpoint(resume_path)
-        for agent in pop:
-            agent.load_checkpoint(resume_path)
+    # Load checkpoint if resuming training
+    if resume: 
+        if os.path.exists(resume_path):
+            print(f"Loading checkpoint from {resume_path}")
+            elite.load_checkpoint(resume_path)
+            for agent in pop:
+                agent.load_checkpoint(resume_path)
+            
 
     # TRAINING LOOP
     try:
         print("Training...")
         pbar = trange(max_steps, unit="step")
         last_min_steps = 0
+
         while np.less([agent.steps[-1] for agent in pop], max_steps).all():
             pop_episode_scores = []
+
             for agent in pop:  # Loop through population
-                obs, info = env.reset()  # Reset environment at start of episode
-
-                if has_nan_or_inf(obs):
-                    print("NaN or Inf detected in obs after reset!")
-
+                state, info = env.reset()  # Reset environment at start of episode
                 scores = np.zeros(num_envs)
                 completed_episode_scores = []
                 steps = 0
+
                 if INIT_HP["CHANNELS_LAST"]:
-                    obs = {
-                        agent_id: obs_channels_to_first(s) for agent_id, s in obs.items()
+                    state = {
+                        agent_id: obs_channels_to_first(s) for agent_id, s in state.items()
                     }
 
-                
                 for idx_step in range(evo_steps // num_envs):
-
                     # Get next action from agent
                     cont_actions, discrete_action = agent.get_action(
-                        obs=obs, training=True, infos=info
+                        state, training=True, infos=info
                     )
+
                     if agent.discrete_actions:
                         action = discrete_action
                     else:
                         action = cont_actions
 
                     # Act in environment
-                    next_obs, reward, termination, truncation, info = env.step(action)
-                    #time.sleep(0.1)  # Sleep to allow environment to process
-
-                    scores += np.sum(np.array(list(reward.values())).transpose(), axis=-1)
+                    next_state, reward, termination, truncation, info = env.step(action)
+                    reward_array = np.array(list(reward.values())).transpose()
+                    scores += np.sum(reward_array, axis=-1)
                     total_steps += num_envs
                     steps += num_envs
 
-                    # Image processing if necessary for the environment
                     if INIT_HP["CHANNELS_LAST"]:
-                        next_obs = {
+                        next_state = {
                             agent_id: obs_channels_to_first(ns)
-                            for agent_id, ns in next_obs.items()
+                            for agent_id, ns in next_state.items()
                         }
 
                     # Save experiences to replay buffer
                     memory.save_to_memory(
-                        obs,
+                        state,
                         cont_actions,
                         reward,
-                        next_obs,
+                        next_state,
                         termination,
                         is_vectorised=True,
                     )
-
+                    
                     # Learn according to learning frequency
                     # Handle learn steps > num_envs
                     if agent.learn_step > num_envs:
@@ -258,7 +240,6 @@ if __name__ == "__main__":
                             experiences = memory.sample(agent.batch_size)
                             # Learn according to agent's RL algorithm
                             agent.learn(experiences)
-                    # Handle num_envs > learn step; learn multiple times per step in env
                     elif (
                         len(memory) >= agent.batch_size and memory.counter > learning_delay
                     ):
@@ -268,7 +249,7 @@ if __name__ == "__main__":
                             # Learn according to agent's RL algorithm
                             agent.learn(experiences)
 
-                    obs = next_obs
+                    state = next_state
 
                     # Calculate scores and reset noise for finished episodes
                     reset_noise_indices = []
@@ -281,32 +262,36 @@ if __name__ == "__main__":
                             scores[idx] = 0
                             reset_noise_indices.append(idx)
                     agent.reset_action_noise(reset_noise_indices)
-
-                    # If any agent is done, break and reset the environment
-                    if any(np.any(v) for v in termination.values()) or any(np.any(v) for v in truncation.values()):
-                        break
                 
-                obs, info = env.reset()  # Reset environment after episode ends
-
                 agent.steps[-1] += steps
+                
+                # Add any remaining incomplete episodes to the scores
+                for idx in range(num_envs):
+                    if scores[idx] != 0:  # If there's an incomplete episode
+                        completed_episode_scores.append(scores[idx])
+                        agent.scores.append(scores[idx])
+                
                 pop_episode_scores.append(completed_episode_scores)
-
+                
         
             # Evaluate population
-            fitnesses = []
-            for agent in pop:
-                base_env = ParallelCarEnv(n_followers=num_followers,render_mode=None)
-                test_env = EarlyTerminationWrapper(base_env)
-                agent.agent_ids = test_env.agents
-                obs, info = test_env.reset()
-                fitness = agent.test(
-                    test_env,
-                    swap_channels=INIT_HP["CHANNELS_LAST"],
-                    max_steps=eval_steps,
-                    loop=eval_loop,
-                )
-                fitnesses.append(fitness)
 
+            '''
+            fitnesses = [
+            agent.test(
+                env,
+                swap_channels=INIT_HP["CHANNELS_LAST"],
+                max_steps=eval_steps,
+                loop=eval_loop,
+            )
+            for agent in pop
+            ]
+            '''
+
+            fitnesses = [np.mean(agent.scores[-30:]) if len(agent.scores) >= 30 else 
+             np.mean(agent.scores) if len(agent.scores) > 0 else -1000 
+             for agent in pop]
+            
             mean_scores = [
                 (
                     np.mean(episode_scores)
@@ -315,7 +300,8 @@ if __name__ == "__main__":
                 )
                 for episode_scores in pop_episode_scores
             ]
-
+            
+            # Dialog output
             print(f"--- Global steps {total_steps} ---")
             print(f"Steps {[agent.steps[-1] for agent in pop]}")
             print(f"Scores: {mean_scores}")
@@ -331,15 +317,17 @@ if __name__ == "__main__":
             # Update step counter
             for agent in pop:
                 agent.steps.append(agent.steps[-1])
+                if len(agent.scores) > 100:
+                    agent.scores = agent.scores[-100:]
+                if len(agent.fitness) > 50:
+                    agent.fitness = agent.fitness[-50:]
 
-            # --- Progress bar update ---
+            # Progress bar update
             current_min_steps = min(agent.steps[-1] for agent in pop)
             pbar.update(current_min_steps - last_min_steps)
             last_min_steps = current_min_steps
 
         # Save the trained algorithm
-        path = "./trained_agent/MATD3"
-        filename = "multiCarAgent_11.pt"
         os.makedirs(path, exist_ok=True)
         save_path = os.path.join(path, filename)
         elite.save_checkpoint(save_path)
