@@ -172,9 +172,8 @@ if agent == "single":
 if agent == "multi": 
 
     # --- Parameters ---
-    n_followers = 3  # Set to match your training
-    agent_path = "trained_agent/MATD3/20250715_1_multi.pt"
-
+    n_followers = 2  # Set to match your training
+    agent_path = "trained_agent/MATD3/20250819_multi.pt"
     # --- Load environment ---
     env = ParallelCarEnv(n_followers=n_followers, render_mode="debug")
     obs, info = env.reset()
@@ -187,23 +186,25 @@ if agent == "multi":
     # --- Automated output naming ---
     base_name = os.path.splitext(os.path.basename(agent_path))[0]  # e.g. '20250713_multi'
     output_dir = os.path.dirname(agent_path)
-    excel_path = os.path.join(output_dir, f"{base_name}.xlsx")
-    gif_path = os.path.join(output_dir, f"{base_name}.gif")
     plot_dir = os.path.join(output_dir, base_name)
     os.makedirs(plot_dir, exist_ok=True)
+    excel_path = os.path.join(plot_dir, f"{base_name}.xlsx")
+    gif_path = os.path.join(plot_dir, f"{base_name}.gif")
 
-    done = {agent: False for agent in env.agents}
+    # Store original agent list since env.agents becomes empty after termination
+    all_agents = env.agents.copy()
+    done = {agent: False for agent in all_agents}
 
-    car_positions = {agent: [] for agent in env.agents}
-    car_velocities = {agent: [] for agent in env.agents}
-    car_accelerations = {agent: [] for agent in env.agents}
-    car_rewards = {agent: [] for agent in env.agents}
+    car_positions = {agent: [] for agent in all_agents}
+    car_velocities = {agent: [] for agent in all_agents}
+    car_accelerations = {agent: [] for agent in all_agents}
+    car_rewards = {agent: [] for agent in all_agents}
     # Add leader tracking
     leader_positions = []
     leader_velocities = []
 
-    # Prepare to track reward components per agent per step
-    reward_components = {agent: {key: [] for key in ["lognorm", "forward", "ttc", "collision", "close", "jerk", "reverse", "gap"]} for agent in env.agents}
+    # Prepare to track reward components per agent per step (only the ones that exist)
+    reward_components = {agent: {key: [] for key in ["lognorm", "ttc", "collision", "jerk", "reverse", "gap"]} for agent in all_agents}
 
     while not all(done.values()):
         # Get actions for all agents at once
@@ -214,57 +215,63 @@ if agent == "multi":
         obs, rewards, terminations, truncations, infos = env.step(actions)
 
         print("Rewards:", rewards)
+        print("Terminations:", terminations)
+        print("Truncations:", truncations)
         print("\nObs:", obs)
 
-        for i, agent in enumerate(env.agents):
-            car_positions[agent].append(env.followers[i].position)
-            car_velocities[agent].append(env.followers[i].velocity)
-            car_accelerations[agent].append(env.followers[i].acceleration)
-            car_rewards[agent].append(rewards[agent])
+        # Record data for all agents, even if they're about to terminate
+        for i, agent in enumerate(all_agents):
+            if agent in rewards:  # Agent has reward data this step
+                car_positions[agent].append(env.followers[i].position)
+                car_velocities[agent].append(env.followers[i].velocity)
+                car_accelerations[agent].append(env.followers[i].acceleration)
+                car_rewards[agent].append(rewards[agent])
 
-            # --- Use reward breakdowns from infos ---
-            for key in reward_components[agent].keys():
-                reward_components[agent][key].append(infos[agent].get(key, np.nan))
+                # --- Use reward breakdowns from infos ---
+                for key in reward_components[agent].keys():
+                    reward_components[agent][key].append(infos[agent].get(key, np.nan))
 
-
-        leader_positions.append(env.leader_position)
-        leader_velocities.append(env.leader_velocity)
-        
+        # Record leader data if any agent is still active or has rewards
+        if rewards:
+            leader_positions.append(env.leader_position)
+            leader_velocities.append(env.leader_velocity)
 
         frame = env.render()
         if frame is not None:
             frames.append(Image.fromarray(frame))
             
-        done = {agent: terminations[agent] or truncations[agent] for agent in env.agents}
+        done = {agent: terminations[agent] or truncations[agent] for agent in all_agents}
        
     env.close()
 
     # Save Results 
     # Prepare the data for export
-    reward_df = pd.DataFrame({agent: car_rewards[agent] for agent in env.agents})
+    reward_df = pd.DataFrame({agent: car_rewards[agent] for agent in all_agents})
 
     # Ensure output directory exists before saving Excel files
-    os.makedirs("trained_agent/MATD3", exist_ok=True)
+    os.makedirs(plot_dir, exist_ok=True)
 
     # Prepare cumulative reward DataFrame for the first sheet
-    cumulative_reward_df = pd.DataFrame({agent: np.cumsum(car_rewards[agent]) for agent in env.agents})
+    cumulative_reward_df = pd.DataFrame({agent: np.cumsum(car_rewards[agent]) for agent in all_agents})
 
     # Save all sheets in one go for efficiency
-    # Prepare position and velocity DataFrames
-    position_df = pd.DataFrame({agent: car_positions[agent] for agent in env.agents})
-    velocity_df = pd.DataFrame({agent: car_velocities[agent] for agent in env.agents})
+    # Prepare position and velocity DataFrames, including leader
+    position_df = pd.DataFrame({agent: car_positions[agent] for agent in all_agents})
+    position_df["Leader"] = leader_positions
+    velocity_df = pd.DataFrame({agent: car_velocities[agent] for agent in all_agents})
+    velocity_df["Leader"] = leader_velocities
+    acceleration_df = pd.DataFrame({agent: car_accelerations[agent] for agent in all_agents})
 
     with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
         cumulative_reward_df.to_excel(writer, sheet_name="TotalReward", index_label="Time Step")
         position_df.to_excel(writer, sheet_name="Positions", index_label="Time Step")
         velocity_df.to_excel(writer, sheet_name="Velocities", index_label="Time Step")
-        for agent in env.agents:
+        acceleration_df.to_excel(writer, sheet_name="Accelerations", index_label="Time Step")
+        for agent in all_agents:
             breakdown_df = pd.DataFrame({
                 "lognorm": reward_components[agent]["lognorm"],
-                "forward": reward_components[agent]["forward"],
                 "ttc": reward_components[agent]["ttc"],
                 "collision": reward_components[agent]["collision"],
-                "close": reward_components[agent]["close"],
                 "jerk": reward_components[agent]["jerk"],
                 "reverse": reward_components[agent]["reverse"],
                 "gap": reward_components[agent]["gap"],
@@ -281,7 +288,7 @@ if agent == "multi":
     # Position plot
     plot.figure(figsize=(10, 5))
     plot.plot(leader_positions, label="Leader Position", linestyle="-")
-    for agent in env.agents:
+    for agent in all_agents:
         plot.plot(car_positions[agent], label=f"{agent} Position")
     plot.xlabel("Time Step")
     plot.ylabel("Position (m)")
@@ -294,7 +301,7 @@ if agent == "multi":
     # Velocity plot
     plot.figure(figsize=(10, 5))
     plot.plot(leader_velocities, label="Leader Velocity", linestyle="-")
-    for agent in env.agents:
+    for agent in all_agents:
         plot.plot(car_velocities[agent], label=f"{agent} Velocity")
     plot.xlabel("Time Step")
     plot.ylabel("Velocity (m/s)")
@@ -306,7 +313,7 @@ if agent == "multi":
 
     # Acceleration plot
     plot.figure(figsize=(10, 5))
-    for agent in env.agents:
+    for agent in all_agents:
         plot.plot(car_accelerations[agent], label=f"{agent} Acceleration")
     plot.xlabel("Time Step")
     plot.ylabel("Acceleration (m/s²)")
@@ -318,7 +325,7 @@ if agent == "multi":
 
     # Cumulative Reward plot
     plot.figure(figsize=(10, 5))
-    for agent in env.agents:
+    for agent in all_agents:
         cumulative_rewards = np.cumsum(car_rewards[agent])
         plot.plot(cumulative_rewards, label=f"{agent} Cumulative Reward")
     plot.xlabel("Time Step")
@@ -328,6 +335,22 @@ if agent == "multi":
     plot.grid(True)
     plot.show(block=False)
     plot.savefig(os.path.join(plot_dir, "cumulative_rewards.png"))
+
+    # Plot each individual reward term for each agent
+    reward_terms = ["lognorm", "ttc", "collision", "jerk", "reverse", "gap"]
+
+    for agent in all_agents:
+        plot.figure(figsize=(12, 6))
+        for term in reward_terms:
+            plot.plot(reward_components[agent][term], label=term)
+        plot.xlabel("Time Step")
+        plot.ylabel("Reward Value")
+        plot.title(f"Reward Components for {agent}")
+        plot.legend()
+        plot.grid(True)
+        plot.tight_layout()
+        plot.savefig(os.path.join(plot_dir, f"{agent}_reward_components.png"))
+        plot.show(block=False)
 
 
 

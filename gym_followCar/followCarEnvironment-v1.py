@@ -162,6 +162,7 @@ class followCar_v1(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         self.leaderVelocity = self.velocityProfiles[self.vehicleID]["velocity"][self.leaderVelocityCounter] * 0.3048 # conversion from feet/sec to m/sec
         self.leaderVelocityCounter += 1
         leaderPosition += self.leaderVelocity * self.tau
+        
         self.followerVelocity = np.clip(self.followerVelocity, 0, 33) 
         self.followerAcceleration = action[0] * 3 # choose acceleration between -3m/s^2 to 3m/s^2
         self.followerVelocity += self.followerAcceleration * self.tau
